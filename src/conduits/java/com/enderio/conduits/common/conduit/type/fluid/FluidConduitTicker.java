@@ -114,7 +114,15 @@ public class FluidConduitTicker extends CapabilityAwareConduitTicker<FluidCondui
             final int fluidRate = getScaledFluidRate(extract);
 
             if (fluidConduitData.lockedFluid() != null) {
-                doFluidTransfer(new FluidStack(fluidConduitData.lockedFluid(), fluidRate), extract, inserts);
+                int remaining = fluidRate;
+
+                for (int i = 0; i < extractHandler.getTanks() && remaining > 0; i++) {
+                    if (extractHandler.getFluidInTank(i).getFluid() != fluidConduitData.lockedFluid()) {
+                        continue;
+                    }
+
+                    remaining = doFluidTransfer(new FluidStack(extractHandler.getFluidInTank(i), remaining), extract, inserts);
+                }
             } else {
                 int remaining = fluidRate;
 
@@ -125,7 +133,7 @@ public class FluidConduitTicker extends CapabilityAwareConduitTicker<FluidCondui
                     }
 
                     Fluid fluid = extractHandler.getFluidInTank(i).getFluid();
-                    remaining = doFluidTransfer(new FluidStack(fluid, remaining), extract, inserts);
+                    remaining = doFluidTransfer(new FluidStack(extractHandler.getFluidInTank(i), remaining), extract, inserts);
 
                     if (lockFluids && remaining < fluidRate) {
                         for (ConduitNode<FluidConduitData> node : graph.getNodes()) {
