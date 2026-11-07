@@ -19,7 +19,6 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
-import net.minecraft.world.level.material.Fluids;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 import org.jetbrains.annotations.Nullable;
@@ -64,8 +63,8 @@ public class XPObeliskBlockEntity extends MachineBlockEntity {
             public int fill(FluidStack resource, FluidAction action) {
                 // Convert into XP Juice
                 if (TANK.isFluidValid(this, resource)) {
-                    var currentFluid = TANK.getFluid(this).getFluid();
-                    if (currentFluid == Fluids.EMPTY || resource.getFluid().isSame(currentFluid)) {
+                    FluidStack currentFluid = TANK.getFluid(this);
+                    if (currentFluid.isEmpty() || resource.isFluidEqual(currentFluid)) {
                         return super.fill(resource, action);
                     } else {
                         return super.fill(new FluidStack(currentFluid, resource.getAmount()), action);

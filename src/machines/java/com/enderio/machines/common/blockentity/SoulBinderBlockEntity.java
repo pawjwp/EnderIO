@@ -33,7 +33,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.material.Fluids;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraftforge.fml.LogicalSide;
@@ -158,8 +157,8 @@ public class SoulBinderBlockEntity extends PoweredMachineBlockEntity {
             public int fill(FluidStack resource, FluidAction action) {
                 // Convert into XP Juice
                 if (TANK.isFluidValid(this, resource)) {
-                    var currentFluid = TANK.getFluid(this).getFluid();
-                    if (currentFluid == Fluids.EMPTY || resource.getFluid().isSame(currentFluid)) {
+                    FluidStack currentFluid = TANK.getFluid(this);
+                    if (currentFluid.isEmpty() || resource.isFluidEqual(currentFluid)) {
                         return super.fill(resource, action);
                     } else {
                         return super.fill(new FluidStack(currentFluid, resource.getAmount()), action);
