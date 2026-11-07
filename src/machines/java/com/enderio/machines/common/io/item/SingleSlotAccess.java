@@ -23,6 +23,12 @@ public class SingleSlotAccess {
     public ItemStack insertItem(MachineBlockEntity machine, ItemStack itemStack, boolean simulate) {
         return insertItem(machine.getInventory(), itemStack, simulate);
     }
+    public ItemStack extractItem(MachineInventory inventory, int amount, boolean simulate) {
+        return inventory.extractItem(index, amount, simulate);
+    }
+    public ItemStack extractItem(MachineBlockEntity machine, int amount, boolean simulate) {
+        return extractItem(machine.getInventory(), amount, simulate);
+    }
     public void setStackInSlot(MachineInventory inventory, ItemStack itemStack) {
         inventory.setStackInSlot(index, itemStack);
     }

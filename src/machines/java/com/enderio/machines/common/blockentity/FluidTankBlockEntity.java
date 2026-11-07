@@ -2,6 +2,7 @@ package com.enderio.machines.common.blockentity;
 
 import com.enderio.base.common.tag.EIOTags;
 import com.enderio.base.common.util.ExperienceUtil;
+import com.enderio.core.common.capability.EnderFluidUtil;
 import com.enderio.core.common.network.slot.FluidStackNetworkDataSlot;
 import com.enderio.machines.common.blockentity.base.MachineBlockEntity;
 import com.enderio.machines.common.init.MachineRecipes;
@@ -21,9 +22,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -106,9 +105,9 @@ public abstract class FluidTankBlockEntity extends MachineBlockEntity implements
 
     public boolean acceptItemFill(ItemStack item) {
         // bucket types
-        Optional<IFluidHandlerItem> fluidHandlerCap = item.getCapability(ForgeCapabilities.FLUID_HANDLER_ITEM).resolve();
+        IFluidHandlerItem fluidHandlerCap = item.copyWithCount(1).getCapability(ForgeCapabilities.FLUID_HANDLER_ITEM).orElse(null);
 
-        if (fluidHandlerCap.isPresent()) {
+        if (fluidHandlerCap != null && !fluidHandlerCap.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.SIMULATE).isEmpty()) {
             return true;
         }
 
@@ -124,15 +123,16 @@ public abstract class FluidTankBlockEntity extends MachineBlockEntity implements
     }
 
     public boolean acceptItemDrain(ItemStack item) {
-        // bucket types
-        Optional<IFluidHandlerItem> fluidHandlerCap = item.getCapability(ForgeCapabilities.FLUID_HANDLER_ITEM).resolve();
+        FluidStack fluid = TANK.getFluid(this);
 
-        if (fluidHandlerCap.isPresent()) {
+        // Receive items that can accept our current fluid as input -or- if our current contents are empty.
+        IFluidHandlerItem fluidHandlerCap = item.copyWithCount(1).getCapability(ForgeCapabilities.FLUID_HANDLER_ITEM).orElse(null);
+
+        if (fluidHandlerCap != null && (fluid.isEmpty() || fluidHandlerCap.fill(new FluidStack(fluid, Integer.MAX_VALUE), IFluidHandler.FluidAction.SIMULATE) > 0)) {
             return true;
         }
 
         // Mending
-        FluidStack fluid = TANK.getFluid(this);
 
         if (item.isDamageableItem() && !fluid.isEmpty() && fluid.getFluid().is(EIOTags.Fluids.EXPERIENCE)) {
             if (item.getEnchantmentLevel(Enchantments.MENDING) > 0) {
@@ -199,32 +199,43 @@ public abstract class FluidTankBlockEntity extends MachineBlockEntity implements
 
     // endregion
 
-    //TODO: enable fluid tanks to receive stackable fluid containers
     private void fillInternal() {
         ItemStack inputItem = FLUID_FILL_INPUT.getItemStack(this);
-        ItemStack outputItem = FLUID_FILL_OUTPUT.getItemStack(this);
-        if (!inputItem.isEmpty()) {
-            if (inputItem.getItem() instanceof BucketItem filledBucket) {
-                if (outputItem.isEmpty() || (outputItem.getItem() == Items.BUCKET && outputItem.getCount() < outputItem.getMaxStackSize())) {
-                    int filled = TANK.fill(this, new FluidStack(filledBucket.getFluid(), FluidType.BUCKET_VOLUME), IFluidHandler.FluidAction.SIMULATE);
-                    if (filled == FluidType.BUCKET_VOLUME) {
-                        TANK.fill(this, new FluidStack(filledBucket.getFluid(), FluidType.BUCKET_VOLUME), IFluidHandler.FluidAction.EXECUTE);
-                        inputItem.shrink(1);
-                        FLUID_FILL_OUTPUT.insertItem(this, Items.BUCKET.getDefaultInstance(), false);
-                    }
-                }
-            } else {
-                Optional<IFluidHandlerItem> fluidHandlerCap = inputItem.getCapability(ForgeCapabilities.FLUID_HANDLER_ITEM).resolve();
-                if (fluidHandlerCap.isPresent() && outputItem.isEmpty()) {
-                    IFluidHandlerItem itemFluid = fluidHandlerCap.get();
+        if (inputItem.isEmpty()) {
+            return;
+        }
 
-                    int filled = moveFluids(itemFluid, getFluidHandler(), TANK.getCapacity(this));
-                    if (filled > 0) {
-                        FLUID_FILL_OUTPUT.setStackInSlot(this, itemFluid.getContainer());
-                        FLUID_FILL_INPUT.setStackInSlot(this, ItemStack.EMPTY);
-                    }
-                }
-            }
+        // Only ever handle a single item at a time.
+        ItemStack singleInputItem = inputItem.copyWithCount(1);
+        IFluidHandlerItem fluidHandlerItem = singleInputItem.getCapability(ForgeCapabilities.FLUID_HANDLER_ITEM).orElse(null);
+        if (fluidHandlerItem == null) {
+            return;
+        }
+
+        // See what fluid is available to drain from the item.
+        // We act here because we're acting on a copy of the input.
+        FluidStack availableFluid = fluidHandlerItem.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.SIMULATE);
+
+        // See if we can insert this fluid into the block's tank.
+        int filled = TANK.fill(this, availableFluid, IFluidHandler.FluidAction.SIMULATE);
+        if (filled <= 0) {
+            return;
+        }
+
+        // Get the resulting emptied container
+        ItemStack resultStack = fluidHandlerItem.getContainer();
+
+        // If this is the only input, and it's not fully empty we will retain it in the input slot, so long as the
+        //  destination tank is not full
+        if (inputItem.getCount() == 1 && !EnderFluidUtil.isEmpty(fluidHandlerItem) && !TANK.isFull(this)) {
+            TANK.fill(this, new FluidStack(availableFluid, filled), IFluidHandler.FluidAction.EXECUTE);
+            FLUID_FILL_INPUT.setStackInSlot(this, resultStack);
+        } else if (!FLUID_FILL_INPUT.extractItem(this, 1, true).isEmpty() &&
+            FLUID_FILL_OUTPUT.insertItem(this, resultStack, true).isEmpty()) {
+
+            TANK.fill(this, new FluidStack(availableFluid, filled), IFluidHandler.FluidAction.EXECUTE);
+            FLUID_FILL_INPUT.extractItem(this, 1, false);
+            FLUID_FILL_OUTPUT.insertItem(this, resultStack, false);
         }
     }
 
@@ -241,33 +252,39 @@ public abstract class FluidTankBlockEntity extends MachineBlockEntity implements
     //TODO: enable fluid tanks to receive stackable fluid containers
     private void drainInternal() {
         ItemStack inputItem = FLUID_DRAIN_INPUT.getItemStack(this);
-        ItemStack outputItem = FLUID_DRAIN_OUTPUT.getItemStack(this);
-        if (!inputItem.isEmpty()) {
-            if (inputItem.getItem() == Items.BUCKET) {
-                if (!TANK.getFluid(this).isEmpty()) {
-                    FluidStack stack = TANK.drain(this, FluidType.BUCKET_VOLUME, IFluidHandler.FluidAction.SIMULATE);
-                    if (stack.getAmount() == FluidType.BUCKET_VOLUME && (outputItem.isEmpty() || (outputItem.getItem() == stack.getFluid().getBucket()
-                        && outputItem.getCount() < outputItem.getMaxStackSize()))) {
-                        TANK.drain(this, FluidType.BUCKET_VOLUME, IFluidHandler.FluidAction.EXECUTE);
-                        inputItem.shrink(1);
-                        if (outputItem.isEmpty()) {
-                            FLUID_DRAIN_OUTPUT.setStackInSlot(this, stack.getFluid().getBucket().getDefaultInstance());
-                        } else {
-                            outputItem.grow(1);
-                        }
-                    }
-                }
-            } else {
-                Optional<IFluidHandlerItem> fluidHandlerCap = inputItem.getCapability(ForgeCapabilities.FLUID_HANDLER_ITEM).resolve();
-                if (fluidHandlerCap.isPresent() && outputItem.isEmpty()) {
-                    IFluidHandlerItem itemFluid = fluidHandlerCap.get();
-                    int filled = moveFluids(getFluidHandler(), itemFluid, TANK.getFluidAmount(this));
-                    if (filled > 0) {
-                        FLUID_DRAIN_OUTPUT.setStackInSlot(this, itemFluid.getContainer());
-                        FLUID_DRAIN_INPUT.setStackInSlot(this, ItemStack.EMPTY);
-                    }
-                }
-            }
+        if (inputItem.isEmpty()) {
+            return;
+        }
+
+        // Only ever handle a single item at a time.
+        ItemStack singleInputItem = inputItem.copyWithCount(1);
+        IFluidHandlerItem fluidHandlerItem = singleInputItem.getCapability(ForgeCapabilities.FLUID_HANDLER_ITEM).orElse(null);
+        if (fluidHandlerItem == null) {
+            return;
+        }
+
+        // See what fluid the tank can drain into the item
+        FluidStack availableFluid = TANK.drain(this, Integer.MAX_VALUE, IFluidHandler.FluidAction.SIMULATE);
+
+        // See if we can insert this fluid into the container
+        int filled = fluidHandlerItem.fill(availableFluid, IFluidHandler.FluidAction.EXECUTE);
+        if (filled <= 0) {
+            return;
+        }
+
+        // Get the resulting filled item
+        ItemStack resultStack = fluidHandlerItem.getContainer();
+
+        // If this is the only input, and it isn't completely full, and the destination still has fluid, we will retain it
+        if (inputItem.getCount() == 1 && !EnderFluidUtil.isFull(fluidHandlerItem) && !TANK.isEmpty(this)) {
+            TANK.drain(this, new FluidStack(availableFluid, filled), IFluidHandler.FluidAction.EXECUTE);
+            FLUID_DRAIN_INPUT.setStackInSlot(this, resultStack);
+        } else if (!FLUID_DRAIN_INPUT.extractItem(this, 1, true).isEmpty() &&
+            FLUID_DRAIN_OUTPUT.insertItem(this, resultStack, true).isEmpty()) {
+
+            TANK.drain(this, new FluidStack(availableFluid, filled), IFluidHandler.FluidAction.EXECUTE);
+            FLUID_DRAIN_INPUT.extractItem(this, 1, false);
+            FLUID_DRAIN_OUTPUT.insertItem(this, resultStack, false);
         }
     }
 

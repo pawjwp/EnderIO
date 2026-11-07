@@ -64,6 +64,14 @@ public class TankAccess {
         return getFluid(handler).isEmpty();
     }
 
+    public boolean isFull(MachineBlockEntity machine) {
+        return isFull(machine.getFluidHandler());
+    }
+
+    public boolean isFull(MachineFluidHandler handler) {
+        return getTank(handler).isFull();
+    }
+
     public int fill(MachineFluidHandler handler, FluidStack stack, IFluidHandler.FluidAction action) {
         return handler.fill(stack, action);
     }
