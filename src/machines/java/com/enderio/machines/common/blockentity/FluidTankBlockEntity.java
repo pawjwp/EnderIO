@@ -213,12 +213,18 @@ public abstract class FluidTankBlockEntity extends MachineBlockEntity implements
         }
 
         // See what fluid is available to drain from the item.
-        // We act here because we're acting on a copy of the input.
         FluidStack availableFluid = fluidHandlerItem.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.SIMULATE);
 
         // See if we can insert this fluid into the block's tank.
         int filled = TANK.fill(this, availableFluid, IFluidHandler.FluidAction.SIMULATE);
         if (filled <= 0) {
+            return;
+        }
+
+        // Drain the accepted amount from the item.
+        // We act here because we're acting on a copy of the input.
+        FluidStack drainedFluid = fluidHandlerItem.drain(new FluidStack(availableFluid, filled), IFluidHandler.FluidAction.EXECUTE);
+        if (drainedFluid.isEmpty()) {
             return;
         }
 
@@ -228,12 +234,12 @@ public abstract class FluidTankBlockEntity extends MachineBlockEntity implements
         // If this is the only input, and it's not fully empty we will retain it in the input slot, so long as the
         //  destination tank is not full
         if (inputItem.getCount() == 1 && !EnderFluidUtil.isEmpty(fluidHandlerItem) && !TANK.isFull(this)) {
-            TANK.fill(this, new FluidStack(availableFluid, filled), IFluidHandler.FluidAction.EXECUTE);
+            TANK.fill(this, drainedFluid, IFluidHandler.FluidAction.EXECUTE);
             FLUID_FILL_INPUT.setStackInSlot(this, resultStack);
         } else if (!FLUID_FILL_INPUT.extractItem(this, 1, true).isEmpty() &&
             FLUID_FILL_OUTPUT.insertItem(this, resultStack, true).isEmpty()) {
 
-            TANK.fill(this, new FluidStack(availableFluid, filled), IFluidHandler.FluidAction.EXECUTE);
+            TANK.fill(this, drainedFluid, IFluidHandler.FluidAction.EXECUTE);
             FLUID_FILL_INPUT.extractItem(this, 1, false);
             FLUID_FILL_OUTPUT.insertItem(this, resultStack, false);
         }
